@@ -76,23 +76,32 @@ struct MsgPackDifferApp {
 
 impl eframe::App for MsgPackDifferApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        tick_files(&mut self.path_a, &mut self.loaded_a);
+        tick_files(&mut self.path_b, &mut self.loaded_b);
+
         let width = ctx.available_rect().width();
-        egui::SidePanel::left("path_a")
-            .min_width(width / 4.0)
-            .resizable(true)
-            .show(ctx, |ui| {
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    Self::render_msg_pack_file(&mut self.path_a, &mut self.loaded_a, "A", ui);
+        if self.path_a.is_some() {
+            egui::SidePanel::left("path_a")
+                .min_width(width / 4.0)
+                .resizable(true)
+                .show(ctx, |ui| {
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        Self::render_msg_pack_file(&mut self.path_a, &mut self.loaded_a, "A", ui);
+                    });
                 });
-            });
-        egui::SidePanel::right("path_b")
-            .min_width(width / 4.0)
-            .resizable(true)
-            .show(ctx, |ui| {
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    Self::render_msg_pack_file(&mut self.path_b, &mut self.loaded_b, "B", ui);
+        }
+
+        if self.path_b.is_some() {
+            egui::SidePanel::right("path_b")
+                .min_width(width / 4.0)
+                .resizable(true)
+                .show(ctx, |ui| {
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        Self::render_msg_pack_file(&mut self.path_b, &mut self.loaded_b, "B", ui);
+                    });
                 });
-            });
+        }
+
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::both().show(ui, |ui| {
                 self.render_msg_pack_diff(ui);
@@ -108,22 +117,6 @@ impl MsgPackDifferApp {
         label: &str,
         ui: &mut egui::Ui,
     ) {
-        if let Some(picked_path) = picked_path {
-            match loaded_file {
-                Some(Ok(file)) => {
-                    if file.path != *picked_path {
-                        *loaded_file = Some(LoadedFile::load_from(picked_path));
-                    }
-                }
-                None => {
-                    *loaded_file = Some(LoadedFile::load_from(picked_path));
-                }
-                _ => {}
-            }
-        } else {
-            *loaded_file = None;
-        }
-
         enum Operation {
             Reload(PathBuf),
             Unload,
@@ -217,6 +210,27 @@ impl MsgPackDifferApp {
 
             return;
         }
+    }
+}
+
+fn tick_files(
+    picked_path: &mut Option<PathBuf>,
+    loaded_file: &mut Option<Result<LoadedFile, Box<dyn std::error::Error>>>,
+) {
+    if let Some(picked_path) = picked_path {
+        match loaded_file {
+            Some(Ok(file)) => {
+                if file.path != *picked_path {
+                    *loaded_file = Some(LoadedFile::load_from(picked_path));
+                }
+            }
+            None => {
+                *loaded_file = Some(LoadedFile::load_from(picked_path));
+            }
+            _ => {}
+        }
+    } else {
+        *loaded_file = None;
     }
 }
 
