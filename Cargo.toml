@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 crc32fast = "1.4.2"
-eframe = "0.29.1"
+eframe = { version = "0.29.1", features = ["persistence"] }
 env_logger = "0.11.5"
 rfd = "0.15.0"
 rmpv = "1.3.0"
