@@ -46,6 +46,7 @@ struct LoadedFile {
     data: Vec<u8>,
     crc32: Crc32,
     parsed: rmpv::Value,
+    load_time: jiff::Timestamp,
 }
 impl LoadedFile {
     fn load_from(path: &PathBuf) -> Result<Self, Box<dyn std::error::Error>> {
@@ -58,6 +59,7 @@ impl LoadedFile {
             data,
             crc32,
             parsed,
+            load_time: jiff::Timestamp::now(),
         })
     }
 }
@@ -133,11 +135,6 @@ impl MsgPackDifferApp {
                     ui.horizontal(|ui| {
                         ui.heading(file.path.file_name().unwrap().to_string_lossy())
                             .on_hover_text(file.path.to_string_lossy());
-                        ui.label(format!(
-                            "({} bytes, crc32={:08x})",
-                            file.data.len(),
-                            file.crc32.result
-                        ));
 
                         if ui.button("Reload").clicked() {
                             operation = Some(Operation::Reload(file.path.clone()));
@@ -145,6 +142,15 @@ impl MsgPackDifferApp {
                             operation = Some(Operation::Unload);
                         }
                     });
+                    ui.label(format!(
+                        "Loaded at: {}",
+                        file.load_time.strftime("%Y-%m-%d %H:%M:%S")
+                    ));
+                    ui.label(format!(
+                        "{} bytes, crc32={:08x}",
+                        file.data.len(),
+                        file.crc32.result,
+                    ));
                     render_rmpv(ui, &file.parsed);
                 }
                 Err(err) => {
