@@ -122,6 +122,11 @@ impl MsgPackDifferApp {
             *loaded_file = None;
         }
 
+        enum Operation {
+            Reload(PathBuf),
+            Unload,
+        }
+        let mut operation = None;
         if let Some(file) = loaded_file {
             match file {
                 Ok(file) => {
@@ -133,6 +138,12 @@ impl MsgPackDifferApp {
                             file.data.len(),
                             file.crc32.result
                         ));
+
+                        if ui.button("Reload").clicked() {
+                            operation = Some(Operation::Reload(file.path.clone()));
+                        } else if ui.button("X").clicked() {
+                            operation = Some(Operation::Unload);
+                        }
                     });
                     render_rmpv(ui, &file.parsed);
                 }
@@ -142,6 +153,16 @@ impl MsgPackDifferApp {
             }
         } else {
             ui.heading(format!("File {label}"));
+        }
+        if let Some(operation) = operation {
+            match operation {
+                Operation::Reload(path) => {
+                    *loaded_file = Some(LoadedFile::load_from(&path));
+                }
+                Operation::Unload => {
+                    *picked_path = None;
+                }
+            }
         }
     }
 
