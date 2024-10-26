@@ -1776,8 +1776,10 @@ dependencies = [
  "crc32fast",
  "eframe",
  "env_logger",
+ "log",
  "rfd",
  "rmpv",
+ "serde",
 ]
 
 [[package]]

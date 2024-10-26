@@ -4,6 +4,8 @@
 use std::path::PathBuf;
 
 use eframe::egui;
+use log::{error, warn};
+use serde::{Deserialize, Serialize};
 
 fn main() -> eframe::Result {
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
@@ -39,13 +41,13 @@ impl Crc32 {
     }
 }
 
-struct MsgPackFile {
+struct LoadedFile {
     path: PathBuf,
     data: Vec<u8>,
     crc32: Crc32,
     parsed: rmpv::Value,
 }
-impl MsgPackFile {
+impl LoadedFile {
     fn load_from(path: &PathBuf) -> Result<Self, Box<dyn std::error::Error>> {
         let data = std::fs::read(path)?;
         let crc32 = Crc32::calculate_hash_of(&data);
@@ -60,10 +62,14 @@ impl MsgPackFile {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Serialize, Deserialize)]
 struct MsgPackDifferApp {
-    path_a: Option<MsgPackFile>,
-    path_b: Option<MsgPackFile>,
+    path_a: Option<PathBuf>,
+    #[serde(skip)]
+    loaded_a: Option<Result<LoadedFile, Box<dyn std::error::Error>>>,
+    path_b: Option<PathBuf>,
+    #[serde(skip)]
+    loaded_b: Option<Result<LoadedFile, Box<dyn std::error::Error>>>,
 }
 
 impl eframe::App for MsgPackDifferApp {
@@ -74,7 +80,7 @@ impl eframe::App for MsgPackDifferApp {
             .resizable(true)
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
-                    Self::render_msg_pack_file(&mut self.path_a, "A", ui);
+                    Self::render_msg_pack_file(&mut self.path_a, &mut self.loaded_a, "A", ui);
                 });
             });
         egui::SidePanel::right("path_b")
@@ -82,7 +88,7 @@ impl eframe::App for MsgPackDifferApp {
             .resizable(true)
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
-                    Self::render_msg_pack_file(&mut self.path_b, "B", ui);
+                    Self::render_msg_pack_file(&mut self.path_b, &mut self.loaded_b, "B", ui);
                 });
             });
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -95,42 +101,47 @@ impl eframe::App for MsgPackDifferApp {
 
 impl MsgPackDifferApp {
     fn render_msg_pack_file(
-        current_file: &mut Option<MsgPackFile>,
+        picked_path: &mut Option<PathBuf>,
+        loaded_file: &mut Option<Result<LoadedFile, Box<dyn std::error::Error>>>,
         label: &str,
         ui: &mut egui::Ui,
     ) {
-        if let Some(file) = current_file {
-            ui.horizontal(|ui| {
-                ui.heading(file.path.file_name().unwrap().to_string_lossy())
-                    .on_hover_text(file.path.to_string_lossy());
-                ui.label(format!(
-                    "({} bytes, crc={:08x})",
-                    file.data.len(),
-                    file.crc32.result
-                ));
-            });
-        } else {
-            ui.heading(format!("File {label}"));
-        }
-
-        if ui.button("Open file…").clicked() {
-            if let Some(picked_path) = rfd::FileDialog::new()
-                .add_filter("*.msgpack files", &["msgpack"])
-                .pick_file()
-            {
-                match MsgPackFile::load_from(&picked_path) {
-                    Ok(loaded_file) => {
-                        *current_file = Some(loaded_file);
-                    }
-                    Err(err) => {
-                        ui.label(format!("Error loading file: {}", err));
+        if let Some(picked_path) = picked_path {
+            match loaded_file {
+                Some(Ok(file)) => {
+                    if file.path != *picked_path {
+                        *loaded_file = Some(LoadedFile::load_from(picked_path));
                     }
                 }
+                None => {
+                    *loaded_file = Some(LoadedFile::load_from(picked_path));
+                }
+                _ => {}
             }
+        } else {
+            *loaded_file = None;
         }
 
-        if let Some(file) = current_file {
-            render_rmpv(ui, &file.parsed);
+        if let Some(file) = loaded_file {
+            match file {
+                Ok(file) => {
+                    ui.horizontal(|ui| {
+                        ui.heading(file.path.file_name().unwrap().to_string_lossy())
+                            .on_hover_text(file.path.to_string_lossy());
+                        ui.label(format!(
+                            "({} bytes, crc32={:08x})",
+                            file.data.len(),
+                            file.crc32.result
+                        ));
+                    });
+                    render_rmpv(ui, &file.parsed);
+                }
+                Err(err) => {
+                    ui.label(format!("Error loading file: {}", err));
+                }
+            }
+        } else {
+            ui.heading(format!("File {label}"));
         }
     }
 
@@ -147,6 +158,36 @@ impl MsgPackDifferApp {
         };
         if let Some(prompt) = prompt {
             ui.label(prompt);
+            if ui.button("Open file(s)…").clicked() {
+                if let Some(picked_paths) = rfd::FileDialog::new()
+                    .add_filter("*.msgpack files", &["msgpack"])
+                    .pick_files()
+                {
+                    if picked_paths.len() >= 2 {
+                        self.path_a = Some(picked_paths[0].clone());
+                        self.path_b = Some(picked_paths[1].clone());
+                        if picked_paths.len() > 2 {
+                            warn!(
+                                "Ignoring extra files: {}",
+                                picked_paths[2..]
+                                    .iter()
+                                    .map(|p| p.to_string_lossy())
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            );
+                        }
+                    } else if picked_paths.len() == 1 {
+                        if self.path_a.is_none() {
+                            self.path_a = Some(picked_paths[0].clone());
+                        } else {
+                            self.path_b = Some(picked_paths[0].clone());
+                        }
+                    } else {
+                        error!("No files selected somehow");
+                    }
+                }
+            }
+
             return;
         }
     }
