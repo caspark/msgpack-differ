@@ -71,24 +71,24 @@ impl eframe::App for MsgPackDifferApp {
         let width = ctx.available_rect().width();
         egui::SidePanel::left("path_a")
             .min_width(width / 4.0)
-            .max_width(width * 3.0 / 4.0)
             .resizable(true)
             .show(ctx, |ui| {
-                egui::ScrollArea::both().show(ui, |ui| {
+                egui::ScrollArea::vertical().show(ui, |ui| {
                     Self::render_msg_pack_file(&mut self.path_a, "A", ui);
                 });
             });
         egui::SidePanel::right("path_b")
             .min_width(width / 4.0)
-            .max_width(width * 3.0 / 4.0)
             .resizable(true)
             .show(ctx, |ui| {
-                egui::ScrollArea::both().show(ui, |ui| {
+                egui::ScrollArea::vertical().show(ui, |ui| {
                     Self::render_msg_pack_file(&mut self.path_b, "B", ui);
                 });
             });
         egui::CentralPanel::default().show(ctx, |ui| {
-            self.render_msg_pack_diff(ui);
+            egui::ScrollArea::both().show(ui, |ui| {
+                self.render_msg_pack_diff(ui);
+            });
         });
     }
 }
@@ -176,11 +176,10 @@ fn render_rmpv(ui: &mut egui::Ui, value: &rmpv::Value) {
             ui.label(format!("{} bytes", b.len()));
         }
         rmpv::Value::Array(a) => {
-            // ui.label(format!("(Array of {} items)", a.len()));
             ui.vertical(|ui| {
                 for (i, array_item) in a.iter().enumerate() {
                     ui.horizontal(|ui| {
-                        ui.label(format!("[{i}]"));
+                        // ui.label(format!("[{i}]"));
                         ui.push_id(i, |ui| {
                             egui::CollapsingHeader::new(format!("array[{i}]"))
                                 .default_open(false)
@@ -193,15 +192,33 @@ fn render_rmpv(ui: &mut egui::Ui, value: &rmpv::Value) {
             });
         }
         rmpv::Value::Map(m) => {
-            // ui.label(format!("(Map of {} items)", m.len()));
             ui.vertical(|ui| {
                 for (key, value) in m.iter() {
                     ui.push_id(HashableValue(key), |ui| {
-                        ui.horizontal(|ui| {
-                            render_rmpv(ui, key);
-                            ui.label(" -> ");
-                            render_rmpv(ui, value);
-                        });
+                        egui::CollapsingHeader::new(format!("map[{}]", key))
+                            .default_open(true)
+                            .show(ui, |ui| {
+                                if matches!(
+                                    key,
+                                    rmpv::Value::Nil
+                                        | rmpv::Value::String(_)
+                                        | rmpv::Value::Integer(_)
+                                        | rmpv::Value::F64(_)
+                                        | rmpv::Value::F32(_)
+                                ) {
+                                    // already rendered the key in the map[{}] header so skip it
+                                    render_rmpv(ui, value);
+                                } else {
+                                    ui.label(format!("[FYI! {}]", type_name_of(key)));
+                                    ui.horizontal(|ui| {
+                                        render_rmpv(ui, key);
+                                        ui.label("->");
+                                        render_rmpv(ui, value);
+                                    });
+                                }
+                            })
+                            .header_response
+                            .on_hover_text_at_pointer(type_name_of(key));
                     });
                 }
             });
@@ -209,6 +226,21 @@ fn render_rmpv(ui: &mut egui::Ui, value: &rmpv::Value) {
         rmpv::Value::Ext(i8, bytes) => {
             ui.label(format!("External {}, {} bytes", i8, bytes.len()));
         }
+    }
+}
+
+fn type_name_of(value: &rmpv::Value) -> &'static str {
+    match value {
+        rmpv::Value::Nil => "Key type: Nil",
+        rmpv::Value::Boolean(_) => "Key type: Boolean",
+        rmpv::Value::Integer(_) => "Key type: Integer",
+        rmpv::Value::F32(_) => "Key type: F32",
+        rmpv::Value::F64(_) => "Key type: F64",
+        rmpv::Value::String(_) => "Key type: String",
+        rmpv::Value::Binary(_) => "Key type: Binary",
+        rmpv::Value::Array(_) => "Key type: Array",
+        rmpv::Value::Map(_) => "Key type: Map",
+        rmpv::Value::Ext(_, _) => "Key type: Ext",
     }
 }
 
